@@ -1099,7 +1099,6 @@ function mod:GetZoneName(zone)
 
     simple = self:SimplifyName(zone)
     local inInstance, type = IsInInstance()
-    local _, _, difficulty = GetInstanceInfo()
     local diffid, diffname, heroic = mod:GetDifficultyInfo()
     if inInstance and (diffid <= 0 or not heroic) then
         simple = simple .. diffname

@@ -195,12 +195,13 @@ end
 -- Returns [id, difficulty string, isHeroic]
 function mod:GetDifficultyInfo()
     if GetDifficultyInfo then
-        local _,_,diffid = GetInstanceInfo()
-        local name, _, heroic = GetDifficultyInfo(diffid)
-        return diffid, name, heroic
-    else
-        return 0, "Normal", false
+        local _,instype, diffid, diffname = GetInstanceInfo()
+        if instype ~= "none" and diffid and diffid > 0 then
+            local name, _, heroic = GetDifficultyInfo(diffid)
+            return diffid, name, heroic
+        end
     end
+    return 0, "Normal", false
 end
 
 -- Returns [GUID, UID, Name]
