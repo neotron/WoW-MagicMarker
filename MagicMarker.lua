@@ -63,8 +63,9 @@ local UnitPlayerControlled = UnitPlayerControlled
 local UnitSex = UnitSex
 local GetInstanceInfo = GetInstanceInfo
 local GetDifficultyInfo = GetDifficultyInfo
-local format = string.format
+local CombatLogGetCurrentEventInfo = CombatLogGetCurrentEventInfo
 
+local format = string.format
 local ipairs = ipairs
 local next = next
 local pairs = pairs
@@ -99,6 +100,21 @@ local externalTargets = {}  -- [mark] => data
 local templateTargets = {}  -- [mark] => data
 local playerName
 
+local cleu_parser = CreateFrame("Frame")
+cleu_parser.OnEvent = function(frame, event, ...)
+    mod.HandleCombatEvent(mod,event,...)
+end
+cleu_parser:SetScript("OnEvent", cleu_parser.OnEvent)
+
+local cleu_subevents = {
+    ["SPELL_AURA_APPLIED"] = true,
+    ["UNIT_DIED"] = true,
+    ["PARTY_KILL"] = true,
+}
+
+local function ends_with(str, ending)
+    return ending == "" or str:sub(-#ending) == ending
+end
 
 local function ends_with(str, ending)
     return ending == "" or str:sub(-#ending) == ending
@@ -552,6 +568,28 @@ function mod:HandleCombatEvent()
     local timestamp, event, hideCaster, sourceGUID, sourceName, sourceFlags,
     sourceRaidFlags, guid, name, destflags, destRaidFlags, spellid, spellname = CombatLogGetCurrentEventInfo()
 
+    -- bail out early if we don't care for the subevent
+    if not cleu_subevents[event] then return end
+
+    if event == "UNIT_DIED" or event == "PARTY_KILL" then
+        local data = assignedTargets[guid]
+
+        if data then
+            if self.hasDebug then self:debug("Releasing %s from dead mob %s.", self:GetTargetName(data.mark), name) end
+            mod:SmartMark_RemoveGUID(guid, data.mark, false, true)
+        end
+        -- Special Thaddius hack; Stalagg and Feugen never dies, so unmark if we detect Thaddius death
+        if mod.unmarkThaddiusAdds and GUIDToUID(guid) == "15928" then
+            mod.unmarkThaddiusAdds = nil
+            for id,mobdata in pairs(tankPriorityList) do
+                local uid = GUIDToUID(mobdata.guid)
+                if uid == "15929" or uid == "15930" then
+                    mod:SmartMark_RemoveGUID(mobdata.guid, mobdata.mark, false, true)
+                end
+            end
+        end
+        return
+    end
     if db.autolearncc and event == "SPELL_AURA_APPLIED" then
         local ccid = spellIdToCCID[spellid]
         if not ccid then return end
@@ -581,23 +619,6 @@ function mod:HandleCombatEvent()
                 addcc(ccid)
             end
             self:NotifyChange()
-        end
-    elseif event == "UNIT_DIED" or event == "PARTY_KILL" then
-        local data = assignedTargets[guid]
-
-        if data then
-            if self.hasDebug then self:debug("Releasing %s from dead mob %s.", self:GetTargetName(data.mark), name) end
-            mod:SmartMark_RemoveGUID(guid, data.mark, false, true)
-        end
-    end
-    -- Special Thaddius hack; Stalagg and Feugen never dies, so unmark if we detect Thaddius death
-    if mod.unmarkThaddiusAdds and GUIDToUID(guid) == "15928" then
-        mod.unmarkThaddiusAdds = nil
-        for id,mobdata in pairs(tankPriorityList) do
-            local uid = GUIDToUID(mobdata.guid)
-            if uid == "15929" or uid == "15930" then
-                mod:SmartMark_RemoveGUID(mobdata.guid, mobdata.mark, false, true)
-            end
         end
     end
 end
@@ -644,7 +665,7 @@ function mod:EnableEvents(markOnTarget)
         self:RegisterEvent("UPDATE_MOUSEOVER_UNIT", "SmartMark_MarkUnit", "mouseover")
         self:RegisterEvent("PLAYER_REGEN_ENABLED", "ScheduleGroupScan")
         self:RegisterEvent("GROUP_ROSTER_UPDATE", "ScheduleGroupScan")
-        self:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED", "HandleCombatEvent")
+        cleu_parser:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
         self:ScheduleGroupScan()
     end
 end
@@ -659,7 +680,7 @@ function mod:DisableEvents()
         self:UnregisterEvent("UPDATE_MOUSEOVER_UNIT")
         self:UnregisterEvent("RAID_ROSTER_UPDATE")
         self:UnregisterEvent("PARTY_MEMBERS_CHANGED")
-        self:UnregisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
+        cleu_parser:UnregisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
     end
 end
 
